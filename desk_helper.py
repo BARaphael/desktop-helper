@@ -1,8 +1,8 @@
 import sys
 from typing import Iterable
-from PyQt6.QtWidgets import (QApplication, QMainWindow,
+from PyQt6.QtWidgets import (QWidget, QApplication, QMainWindow, QFormLayout,
                              QTableWidget, QTableWidgetItem, QDockWidget, QTabWidget, QTextEdit, QToolBar, QFileDialog,
-                             QLabel)
+                             QLabel, QLineEdit, QSpinBox, QCheckBox, QPushButton, QGroupBox, QVBoxLayout, QHBoxLayout)
 from PyQt6.QtCore import Qt, QObject, QProcess, QTimer, QSettings
 from PyQt6.QtGui import QTextCursor, QAction, QColor, QCloseEvent
 import time
@@ -43,6 +43,12 @@ class MainWindow(QMainWindow):
         self.process_pool = process_pool
         self.addDockWidget(
             Qt.DockWidgetArea.BottomDockWidgetArea, process_pool.table_dock())
+
+        # settings panel
+        settings = NSettingsPanel(self)
+        self.settings = settings
+        self.addDockWidget(
+            Qt.DockWidgetArea.LeftDockWidgetArea, settings.dock())
 
         # toolbox
         toolbox_file = process_pool.toolbar()
@@ -181,14 +187,24 @@ class NProcessPool():
 
         def _handle_stdout(self):
             data = self.readAllStandardOutput()
-            stdout = bytes(data).decode("utf8")
-            self.print(stdout)
+            try:
+                stdout = bytes(data).decode("utf8")
+                self.print(stdout)
+            except UnicodeDecodeError as error:
+                error.args += (error.args[0] +
+                               f". Bytes tried to decode were: {bytes(data)}.",)
+                raise
 
         def _handle_stderr(self):
             self._health = NProcessPool.ProcessHealth.Error
             data = self.readAllStandardError()
-            stderr = bytes(data).decode("utf8")
-            self.print(stderr)
+            try:
+                stderr = bytes(data).decode("utf8")
+                self.print(stderr)
+            except UnicodeDecodeError as error:
+                error.args += (error.args[0] +
+                               f". Bytes tried to decode were: {bytes(data)}.",)
+                raise
 
         def _handle_state_changed(self, state):
             table = self.pool().table()
@@ -668,6 +684,196 @@ class NProcessPool():
     def _handle_ignore_all_error_triggered(self, state):
         for process in self.process_list():
             process.ignore_error()
+
+
+class NSettingsGroupBox(QGroupBox):
+    def __init__(self, title: str, parent: QWidget | None = ..., setting: QSettings | None = ...):
+        if parent == ...:
+            super().__init__(title)
+        else:
+            super().__init__(title, parent)
+        if setting == ...:
+            setting = QSettings(ORGANIZATION_NAME, APP_NAME)
+        self._setting = setting
+
+        self._box_layout = QVBoxLayout(self)
+        self.setLayout(self._box_layout)
+
+        self._settings_area = QWidget()
+        self._box_layout.addWidget(self._settings_area)
+        self._settings_layout = QFormLayout(self._settings_area)
+        self._settings_area.setLayout(self._settings_layout)
+        self._setting_list = []
+
+        self._init_button()
+        self._is_setting_changed = False
+
+    def add_setting(self, key: str, label: str, default_value: bool | str | int, type_hint: type | None = ...):
+
+        value = self._setting.value(key)
+
+        if value == None:
+            if default_value != ... or default_value != None:
+                value = default_value
+                type_of_value = type(value)
+                self._setting.setValue(key, value)
+            else:
+                if type_hint == ...:
+                    raise ValueError("Need type_hint for new setting.")
+                else:
+                    type_of_value = type_hint
+        else:
+            type_of_value = type(value)
+        if type_of_value == str:
+            if value == "false" or value == "true":
+                widget = QCheckBox(self)
+                if value == "false":
+                    widget.setChecked(False)
+                else:
+                    widget.setChecked(True)
+                widget.stateChanged.connect(self._handle_anything_changed)
+            else:
+                widget = QLineEdit(value, self)
+                widget.textChanged.connect(self._handle_anything_changed)
+            self._add_row(label, widget)
+        elif type_of_value == int:
+            widget = QSpinBox(self)
+            if value:
+                widget.setValue(value)
+            widget.valueChanged.connect(self._handle_anything_changed)
+            self._add_row(label, widget)
+        else:
+            raise TypeError(f"Type {type_of_value} is not yet supported.")
+        self._setting_list.append(
+            {"key": key, "label": label, "widget": widget, "default value": default_value})
+
+    def _set_setting(self, widget: QCheckBox | QLineEdit | QSpinBox, value: bool | str | int):
+        if value == None:
+            return
+        type_of_value = type(value)
+        type_of_widget = type(widget)
+        if type_of_widget == QCheckBox:
+            assert type_of_value == bool or value == "true" or value == "false"
+            if value == "true":
+                value = True
+            elif value == "false":
+                value = False
+            widget.setChecked(value)
+        elif type_of_widget == QLineEdit:
+            assert type_of_value == str
+            widget.setText(value)
+        elif type_of_widget == QSpinBox:
+            assert type_of_value == int
+            widget.setValue(value)
+        else:
+            raise TypeError(f"Widget {type_of_widget} is not yet supported.")
+
+    def _get_setting(self, widget: QCheckBox | QLineEdit | QSpinBox) -> bool | str | int:
+        type_of_widget = type(widget)
+        if type_of_widget == QCheckBox:
+            if widget.isChecked():
+                return True
+            else:
+                return False
+        elif type_of_widget == QLineEdit:
+            return widget.text()
+        elif type_of_widget == QSpinBox:
+            return widget.value()
+
+    def _init_button(self):
+        self._button_area = QWidget()
+        self._box_layout.addWidget(self._button_area)
+        self._button_layout = QHBoxLayout(self._button_area)
+        self._button_area.setLayout(self._button_layout)
+
+        save_button = QPushButton("save", self._button_area)
+        self._save_button = save_button
+        save_button.pressed.connect(self._handle_save_button_pressed)
+        self._button_layout.addWidget(save_button)
+
+        cancel_button = QPushButton("cancel", self._button_area)
+        self._cancel_button = cancel_button
+        cancel_button.pressed.connect(self._handle_cancel_button_pressed)
+        self._button_layout.addWidget(cancel_button)
+
+        default_button = QPushButton("default", self._button_area)
+        self._default_button = default_button
+        default_button.pressed.connect(self._handle_default_button_pressed)
+        self._button_layout.addWidget(default_button)
+
+        self._save_button.setEnabled(False)
+        self._cancel_button.setEnabled(False)
+
+    def _add_row(self, label: str, field: QWidget):
+        self._settings_layout.addRow(label, field)
+
+    def _handle_save_button_pressed(self):
+        for setting in self._setting_list:
+            key = setting["key"]
+            value = self._get_setting(setting["widget"])
+            self._setting.setValue(key, value)
+
+        self._is_setting_changed = False
+        self._save_button.setEnabled(False)
+        self._cancel_button.setEnabled(False)
+
+        # If there are needs when parent class is expected to applied settings at once,
+        # parent should have a method like reload_setting(). Relavant logic should also
+        # be added here.
+
+    def _handle_cancel_button_pressed(self):
+        for setting in self._setting_list:
+            key = setting["key"]
+            widget = setting["widget"]
+            value = self._setting.value(key)
+            self._set_setting(widget, value)
+
+        self._is_setting_changed = False
+        self._save_button.setEnabled(False)
+        self._cancel_button.setEnabled(False)
+
+    def _handle_default_button_pressed(self):
+        for setting in self._setting_list:
+            widget = setting["widget"]
+            value = setting["default value"]
+            self._set_setting(widget, value)
+
+    def _handle_anything_changed(self):
+        self._is_setting_changed = True
+        self._save_button.setEnabled(True)
+        self._cancel_button.setEnabled(True)
+
+
+class NSettingsPanel():
+    def __init__(self, parent: QObject) -> None:
+        self._parent = parent
+        self._dock = QDockWidget("Settings", parent)
+        self._dock.setMinimumWidth(200)
+        self._dock.setMinimumHeight(200)
+
+        self._panel = QWidget(self._dock)
+        self._panel_layout = QVBoxLayout(self._panel)
+        self._panel.setLayout(self._panel_layout)
+        self._dock.setWidget(self._panel)
+
+        # uncomment this to see settings demo
+        self.register(self.demo_settings())
+
+    def dock(self) -> QDockWidget:
+        return self._dock
+
+    def demo_settings(self) -> NSettingsGroupBox:
+        group_box = NSettingsGroupBox("demo settings")
+
+        group_box.add_setting("settings demo/movie", "movie", "Star Trek I")
+        group_box.add_setting("settings demo/volume", "volumn", 27)
+        group_box.add_setting("settings demo/mute", "mute", False)
+        group_box.add_setting("settings demo/scale", "scale", 1)
+
+        return group_box
+
+    def register(self, setting_group: NSettingsGroupBox):
+        self._panel_layout.addWidget(setting_group)
 
 
 def main():
