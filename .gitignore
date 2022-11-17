@@ -3,6 +3,7 @@ test.py
 qprocess_bug_minimum_code.py
 todo.md
 config.ini
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -61,8 +61,7 @@ class MainWindow(QMainWindow):
 
     def _handle_tab_close(self, index):
         tab_item = self.central_tabs.widget(index)
-        if type(tab_item) == NProcessPool.NProcessTextEdit:
-            tab_item: NProcessPool.NProcessTextEdit
+        if isinstance(tab_item, NProcessPool.NProcessTextEdit):
             tab_item.process().hide_display()
 
     def closeEvent(self, event: QCloseEvent):
@@ -91,15 +90,14 @@ class NProcessPool():
     class NProcess(QProcess):
         next_id = 0
 
-        def __init__(self, parent: QObject, display_tab_widget: QTabWidget, pool: "NProcessPool"):
+        def __init__(self, parent: QWidget, display_tab_widget: QTabWidget, pool: "NProcessPool"):
             super().__init__(parent)
             self._id = NProcessPool.NProcess.next_id
             self._display_tab_widget = display_tab_widget
             self._pool = pool
             NProcessPool.NProcess.next_id += 1
             self._output_text_edit = NProcessPool.NProcessTextEdit(
-                "New Process", parent)
-            self._output_text_edit._process = self
+                "New Process", self, parent)
             self._output_text_edit.setReadOnly(True)
             self.readyReadStandardOutput.connect(self._handle_stdout)
             self.readyReadStandardError.connect(self._handle_stderr)
@@ -131,6 +129,9 @@ class NProcessPool():
                 return "white", "unknown"
             elif self._health == NProcessPool.ProcessHealth.Init:
                 return "white", ""
+            else:
+                raise ValueError(
+                    f"Unsupported NProcessPool.ProcessHealth: {self._health}.")
 
         def pool(self) -> "NProcessPool":
             return self._pool
@@ -166,9 +167,12 @@ class NProcessPool():
                 state_str = "stop"
             elif state == QProcess.ProcessState.Starting:
                 state_str = "starting..."
+            else:
+                raise ValueError(
+                    f"Unsupported QProcess.ProcessState: {state}.")
             return state_str
 
-        def running_time(self) -> float:
+        def running_time(self) -> float | None:
             if self.start_time:
                 if self.stop_time > self.start_time:
                     return self.stop_time-self.start_time
@@ -178,7 +182,7 @@ class NProcessPool():
         def running_time_str(self) -> str:
             running_time = self.running_time()
             if running_time:
-                day_str = str(math.floor(self.running_time()/(24*60*60))) + "d"
+                day_str = str(math.floor(running_time/(24*60*60))) + "d"
                 time_str = time.strftime(
                     "%H:%M:%S", time.gmtime(self.running_time()))
                 return " ".join([day_str, time_str])
@@ -188,22 +192,22 @@ class NProcessPool():
         def _handle_stdout(self):
             data = self.readAllStandardOutput()
             try:
-                stdout = bytes(data).decode("utf8")
+                stdout = data.data().decode("utf8")
                 self.print(stdout)
             except UnicodeDecodeError as error:
                 error.args += (error.args[0] +
-                               f". Bytes tried to decode were: {bytes(data)}.",)
+                               f". Bytes tried to decode were: {data.data()}.",)
                 raise
 
         def _handle_stderr(self):
             self._health = NProcessPool.ProcessHealth.Error
             data = self.readAllStandardError()
             try:
-                stderr = bytes(data).decode("utf8")
+                stderr = data.data().decode("utf8")
                 self.print(stderr)
             except UnicodeDecodeError as error:
                 error.args += (error.args[0] +
-                               f". Bytes tried to decode were: {bytes(data)}.",)
+                               f". Bytes tried to decode were: {data.data()}.",)
                 raise
 
         def _handle_state_changed(self, state):
@@ -248,15 +252,16 @@ class NProcessPool():
                 self._dispaly_health = self._health
 
     class NProcessTextEdit(QTextEdit):
-        def __init__(self, text: str, parent: QObject):
+        def __init__(self, text: str, process: "NProcessPool.NProcess",  parent: QWidget):
             super().__init__(text, parent)
             self.hide()
+            self._process = process
 
         def process(self) -> "NProcessPool.NProcess":
             return self._process
 
     class NProcessTableWidget(QTableWidget):
-        def __init__(self, parent: QObject, process_pool: "NProcessPool") -> None:
+        def __init__(self, parent: QWidget, process_pool: "NProcessPool") -> None:
             super().__init__(1, 8, parent)
             self._process_pool = process_pool
             self._horizontal_labels = [
@@ -368,7 +373,7 @@ class NProcessPool():
                 process_id = int(id_str)
                 return self._process_pool._get_process(process_id)
             else:
-                return None
+                raise ValueError("Can't get process of row item.")
 
         def _handle_item_changed(self, item: QTableWidgetItem):
             column = item.column()
@@ -426,7 +431,7 @@ class NProcessPool():
             self._last_double_clicked_item_cell = (
                 item.row(), item.column())  # User may be editing this cell.
 
-    def __init__(self, parent: QObject, display_tab_widget: QTabWidget) -> None:
+    def __init__(self, parent: QWidget, display_tab_widget: QTabWidget) -> None:
         """
         Displat_tab_widget is a QTabWidget where to display information about each process.
         Call table_dock() to get the dock of process table.
@@ -446,7 +451,6 @@ class NProcessPool():
             self.load()
             if setting.value("process manager/start after load") == "true":
                 self._start_all_processes()
-            
 
     def table(self) -> NProcessTableWidget:
         return self._table
@@ -472,7 +476,7 @@ class NProcessPool():
             process_row = self.table().rowCount() - 1
         else:
             process_row = row
-        self.table().set_value_by_column_label(process_row, "id", new_process.id())
+        self.table().set_value_by_column_label(process_row, "id", str(new_process.id()))
         self.table().set_value_by_column_label(process_row, "program", program)
         self.table().set_value_by_column_label(process_row, "arguments", arguments_str)
         self.table().set_value_by_column_label(
@@ -486,7 +490,6 @@ class NProcessPool():
         row = self.table().get_row_by_process_id(process.id())
         self._process_list.remove(process)
         self.table().removeRow(row)
-        process.setParent(None)
         process.deleteLater()
 
     def save(self):
@@ -612,6 +615,8 @@ class NProcessPool():
         for process in self.process_list():
             if process.id() == id:
                 return process
+        else:
+            raise ValueError("No process has id {id}.")
 
     def _start_all_processes(self):
         for process in self.process_list():
@@ -649,22 +654,26 @@ class NProcessPool():
             return False
 
     def _handle_start_current_triggered(self, state):
-        if type(self._display_tab_widget.currentWidget()) == NProcessPool.NProcessTextEdit:
-            self._display_tab_widget.currentWidget().process().start()
+        current_widget = self._display_tab_widget.currentWidget()
+        if isinstance(current_widget, NProcessPool.NProcessTextEdit):
+            current_widget.process().start()
 
     def _handle_stop_current_triggered(self, state):
-        if type(self._display_tab_widget.currentWidget()) == NProcessPool.NProcessTextEdit:
-            self._display_tab_widget.currentWidget().process().kill()
+        current_widget = self._display_tab_widget.currentWidget()
+        if isinstance(current_widget, NProcessPool.NProcessTextEdit):
+            current_widget.process().kill()
 
     def _handle_restart_current_triggered(self, state):
-        if type(self._display_tab_widget.currentWidget()) == NProcessPool.NProcessTextEdit:
-            self._display_tab_widget.currentWidget().process().kill()
-            self._display_tab_widget.currentWidget().process().waitForFinished(30000)
-            self._display_tab_widget.currentWidget().process().start()
+        current_widget = self._display_tab_widget.currentWidget()
+        if isinstance(current_widget, NProcessPool.NProcessTextEdit):
+            current_widget.process().kill()
+            current_widget.process().waitForFinished(30000)
+            current_widget.process().start()
 
     def _handle_ignore_current_error_triggered(self, state):
-        if type(self._display_tab_widget.currentWidget()) == NProcessPool.NProcessTextEdit:
-            self._display_tab_widget.currentWidget().process().ignore_error()
+        current_widget = self._display_tab_widget.currentWidget()
+        if isinstance(current_widget, NProcessPool.NProcessTextEdit):
+            current_widget.process().ignore_error()
 
     def _handle_start_select_triggered(self, state):
         current_process = self.table()._get_process_by_item(self.table().currentItem())
@@ -717,7 +726,7 @@ class NSettingsGroupBox(QGroupBox):
             super().__init__(title)
         else:
             super().__init__(title, parent)
-        if setting == ...:
+        if not isinstance(setting, QSettings):
             setting = QSettings(ORGANIZATION_NAME, APP_NAME)
         self._setting = setting
 
@@ -738,18 +747,9 @@ class NSettingsGroupBox(QGroupBox):
         value = self._setting.value(key)
 
         if value == None:
-            if default_value != ... or default_value != None:
-                value = default_value
-                type_of_value = type(value)
-                self._setting.setValue(key, value)
-            else:
-                if type_hint == ...:
-                    raise ValueError("Need type_hint for new setting.")
-                else:
-                    type_of_value = type_hint
-        else:
-            type_of_value = type(value)
-        if type_of_value == str:
+            value = default_value
+            self._setting.setValue(key, value)
+        if isinstance(value, str):
             if value == "false" or value == "true":
                 widget = QCheckBox(self)
                 if value == "false":
@@ -761,53 +761,57 @@ class NSettingsGroupBox(QGroupBox):
                 widget = QLineEdit(value, self)
                 widget.textChanged.connect(self._handle_anything_changed)
             self._add_row(label, widget)
-        elif type_of_value == bool:
+        elif isinstance(value, bool):
             widget = QCheckBox(self)
             widget.setChecked(value)
             widget.stateChanged.connect(self._handle_anything_changed)
             self._add_row(label, widget)
-        elif type_of_value == int:
+        elif isinstance(value, int):
             widget = QSpinBox(self)
             if value:
                 widget.setValue(value)
             widget.valueChanged.connect(self._handle_anything_changed)
             self._add_row(label, widget)
         else:
-            raise TypeError(f"Type {type_of_value} is not yet supported.")
+            raise TypeError(f"Type {type(value)} is not yet supported.")
         self._setting_list.append(
             {"key": key, "label": label, "widget": widget, "default value": default_value})
 
     def _set_setting(self, widget: QCheckBox | QLineEdit | QSpinBox, value: bool | str | int):
         if value == None:
             return
-        type_of_value = type(value)
-        type_of_widget = type(widget)
-        if type_of_widget == QCheckBox:
-            assert type_of_value == bool or value == "true" or value == "false"
-            if value == "true":
-                value = True
-            elif value == "false":
-                value = False
+        if isinstance(widget, QCheckBox):
+            if isinstance(value, bool):
+                pass
+            elif isinstance(value, str):
+                if value == "true":
+                    value = True
+                elif value == "false":
+                    value = False
+                else:
+                    raise ValueError(f"Can't convert str {value} to bool literally,\
+                                    so it can't be set to {type(widget)}.")
+            else:
+                raise ValueError(f"Cannt set {type(value)} to {type(widget)}.")
             widget.setChecked(value)
-        elif type_of_widget == QLineEdit:
-            assert type_of_value == str
+        elif isinstance(widget, QLineEdit):
+            assert isinstance(value, str)
             widget.setText(value)
-        elif type_of_widget == QSpinBox:
-            assert type_of_value == int
+        elif isinstance(widget, QSpinBox):
+            assert isinstance(value, int)
             widget.setValue(value)
         else:
-            raise TypeError(f"Widget {type_of_widget} is not yet supported.")
+            raise TypeError(f"Widget {type(widget)} is not yet supported.")
 
     def _get_setting(self, widget: QCheckBox | QLineEdit | QSpinBox) -> bool | str | int:
-        type_of_widget = type(widget)
-        if type_of_widget == QCheckBox:
+        if isinstance(widget, QCheckBox):
             if widget.isChecked():
                 return True
             else:
                 return False
-        elif type_of_widget == QLineEdit:
+        elif isinstance(widget, QLineEdit):
             return widget.text()
-        elif type_of_widget == QSpinBox:
+        elif isinstance(widget, QSpinBox):
             return widget.value()
 
     def _init_button(self):
@@ -875,7 +879,7 @@ class NSettingsGroupBox(QGroupBox):
 
 
 class NSettingsPanel():
-    def __init__(self, parent: QObject) -> None:
+    def __init__(self, parent: QWidget) -> None:
         self._parent = parent
         self._dock = QDockWidget("Settings", parent)
         self._dock.setMinimumWidth(200)
