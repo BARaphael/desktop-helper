@@ -9,6 +9,7 @@ import time
 import math
 import ast
 import enum
+from typing import Union
 
 ORGANIZATION_NAME = "Desk Helper"
 APP_NAME = "Desk Helper"
@@ -172,7 +173,7 @@ class NProcessPool():
                     f"Unsupported QProcess.ProcessState: {state}.")
             return state_str
 
-        def running_time(self) -> float | None:
+        def running_time(self) -> Union[float, None]:
             if self.start_time:
                 if self.stop_time > self.start_time:
                     return self.stop_time-self.start_time
@@ -369,7 +370,7 @@ class NProcessPool():
                     return False
             return True
 
-        def _is_empty(self, item: QTableWidgetItem | None) -> bool:
+        def _is_empty(self, item: Union[QTableWidgetItem, None]) -> bool:
             if item == None or item.text() == "":
                 return True
             else:
@@ -721,7 +722,7 @@ class NProcessPool():
 
 
 class NSettingsGroupBox(QGroupBox):
-    def __init__(self, title: str, parent: QWidget | None = ..., setting: QSettings | None = ...):
+    def __init__(self, title: str, parent: Union[QWidget, None] = ..., setting: Union[QSettings, None] = ...):
         if not isinstance(parent, QWidget):
             super().__init__(title)
         else:
@@ -742,7 +743,7 @@ class NSettingsGroupBox(QGroupBox):
         self._init_button()
         self._is_setting_changed = False
 
-    def add_setting(self, key: str, label: str, default_value: bool | str | int, type_hint: type | None = ...):
+    def add_setting(self, key: str, label: str, default_value: Union[bool, str, int], type_hint: Union[type, None] = ...):
 
         value = self._setting.value(key)
 
@@ -777,7 +778,7 @@ class NSettingsGroupBox(QGroupBox):
         self._setting_list.append(
             {"key": key, "label": label, "widget": widget, "default value": default_value})
 
-    def _set_setting(self, widget: QCheckBox | QLineEdit | QSpinBox, value: bool | str | int | None):
+    def _set_setting(self, widget: Union[QCheckBox, QLineEdit, QSpinBox], value: Union[bool, str, int, None]):
         if value == None:
             return
         if isinstance(widget, QCheckBox):
@@ -801,7 +802,7 @@ class NSettingsGroupBox(QGroupBox):
             assert isinstance(value, int)
             widget.setValue(value)
 
-    def _get_setting(self, widget: QCheckBox | QLineEdit | QSpinBox) -> bool | str | int:
+    def _get_setting(self, widget: Union[QCheckBox, QLineEdit, QSpinBox]) -> Union[bool, str, int]:
         if isinstance(widget, QCheckBox):
             if widget.isChecked():
                 return True
