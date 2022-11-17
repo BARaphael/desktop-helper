@@ -11,6 +11,11 @@ git clone https://github.com/BARaphael/desktop-helper.git
 cd desktop-helper
 python3 ./desktop_helper/helper.py
 ```
+or
+```
+python3 -m pip install desktop_helper
+python3 -m desktop_helper.helper
+```
 ## Process Manager
 You may write plenty of python scripts for different kinds of work. Process manager allows centralized management of your scripts in a single location.    
 ### What can you do?
