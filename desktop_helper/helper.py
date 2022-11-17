@@ -118,7 +118,7 @@ class NProcessPool():
         def ignore_error(self):
             self._health = NProcessPool.ProcessHealth.NoError
 
-        def health(self) -> tuple[str, str]:
+        def health(self) -> "tuple[str, str]":
             """
             return (color_str, health_str)
             """
@@ -462,7 +462,7 @@ class NProcessPool():
     def toolbar(self) -> QToolBar:
         return self._toolbar
 
-    def process_list(self) -> list[NProcess]:
+    def process_list(self) -> "list[NProcess]":
         return self._process_list
 
     def add_process(self, program: str, arguments: Iterable[str], row: int = -1):
