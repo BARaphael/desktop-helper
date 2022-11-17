@@ -38,7 +38,6 @@ class MainWindow(QMainWindow):
 
         # process table
         process_pool = NProcessPool(self, central_tabs)
-        process_pool.load()
         # The following line is necessary because otherwise connect() in NProcessPool will not work
         self.process_pool = process_pool
         self.addDockWidget(
@@ -47,6 +46,7 @@ class MainWindow(QMainWindow):
         # settings panel
         settings = NSettingsPanel(self)
         self.settings = settings
+        settings.register(process_pool.settings())
         self.addDockWidget(
             Qt.DockWidgetArea.LeftDockWidgetArea, settings.dock())
 
@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
             tab_item.process().hide_display()
 
     def closeEvent(self, event: QCloseEvent):
-        self.process_pool.save()
+        self.process_pool.safe_close()
 
 
 class NProcessPool():
@@ -441,6 +441,12 @@ class NProcessPool():
         self._dock.setWidget(self._table)
         self._toolbar = QToolBar("Script Server Toolbar")
         self._init_toolbar()
+        setting = QSettings(ORGANIZATION_NAME, APP_NAME)
+        if setting.value("process manager/load after launch") == "true":
+            self.load()
+            if setting.value("process manager/start after load") == "true":
+                self._start_all_processes()
+            
 
     def table(self) -> NProcessTableWidget:
         return self._table
@@ -491,6 +497,22 @@ class NProcessPool():
         result = self._load_all_processes()
         if result:
             print("Previous processes are loaded.")
+
+    def safe_close(self):
+        if QSettings(ORGANIZATION_NAME, APP_NAME).value("process manager/save before exit") == "true":
+            self.save()
+
+    def settings(self) -> "NSettingsGroupBox":
+        group_box = NSettingsGroupBox("process manager")
+
+        group_box.add_setting(
+            "process manager/save before exit", "save before exit", False)
+        group_box.add_setting(
+            "process manager/load after launch", "load after launch", False)
+        group_box.add_setting(
+            "process manager/start after load", "start after load", False)
+
+        return group_box
 
     def _init_toolbar(self):
         open_action = QAction("&Open", self._parent)
@@ -591,6 +613,10 @@ class NProcessPool():
             if process.id() == id:
                 return process
 
+    def _start_all_processes(self):
+        for process in self.process_list():
+            process.start()
+
     def _handle_update_timer_timeout(self):
         for process in self.process_list():
             running_time_str = process.running_time_str()
@@ -668,8 +694,7 @@ class NProcessPool():
             self.remove_process(current_process)
 
     def _handle_start_all_triggered(self, state):
-        for process in self.process_list():
-            process.start()
+        self._start_all_processes()
 
     def _handle_stop_all_triggered(self, state):
         for process in self.process_list():
@@ -735,6 +760,11 @@ class NSettingsGroupBox(QGroupBox):
             else:
                 widget = QLineEdit(value, self)
                 widget.textChanged.connect(self._handle_anything_changed)
+            self._add_row(label, widget)
+        elif type_of_value == bool:
+            widget = QCheckBox(self)
+            widget.setChecked(value)
+            widget.stateChanged.connect(self._handle_anything_changed)
             self._add_row(label, widget)
         elif type_of_value == int:
             widget = QSpinBox(self)
@@ -857,7 +887,7 @@ class NSettingsPanel():
         self._dock.setWidget(self._panel)
 
         # uncomment this to see settings demo
-        self.register(self.demo_settings())
+        # self.register(self.demo_settings())
 
     def dock(self) -> QDockWidget:
         return self._dock
