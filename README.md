@@ -6,14 +6,18 @@ A simple desktop helper for various kinds of tedious jobs on your desktop. Previ
 Support platform:
 - Windows
 ## Usage
+### Install
 ```
-git clone https://github.com/BARaphael/desktop-helper.git
-cd desktop-helper
-python3 ./desktop_helper/helper.py
+python3 -m pip install desktop_helper
 ```
 or
 ```
-python3 -m pip install desktop_helper
+git clone https://github.com/BARaphael/desktop-helper.git
+cd desktop-helper
+python3 -m pip install .
+```
+### Quick Start
+```
 python3 -m desktop_helper.helper
 ```
 ## Process Manager
